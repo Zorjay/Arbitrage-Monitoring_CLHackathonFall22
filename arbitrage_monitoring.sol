@@ -516,14 +516,26 @@ contract ArbitrageMonitoring is Ownable{
         IUniswapV2Pair pair;
     }
 
-    Pool[] liquidityPools;
+    struct ArbitrageOpportunity {
+        address router0;
+        address router1;
+        address tokenA;
+        address tokenB;
+        uint256 priceBofARouter0;
+        uint256 priceBofARouter1;
+        uint256 delta;
+    }
+
+    Pool[] public liquidityPools;
 
     constructor(){}
 
     
-    function lpPresent(address _router, address _pair) public view returns(bool){
+    function lpPresent(address _router, address _tokenA, address _tokenB) public view returns(bool){
         for (uint i=0; i<liquidityPools.length; i++){
-            if (liquidityPools[i].routerAddress == _router && liquidityPools[i].pairAddress == _pair) {
+            if (liquidityPools[i].routerAddress == _router && 
+               ((liquidityPools[i].tokenA == _tokenA && liquidityPools[i].tokenB == _tokenB) || (liquidityPools[i].tokenA == _tokenB && liquidityPools[i].tokenB == _tokenA))
+               ) {
                 return true;
             }
         }
@@ -531,9 +543,13 @@ contract ArbitrageMonitoring is Ownable{
     }
     
     function addLiquidityPool(address _newRouter, address _tokenA, address _tokenB) external onlyOwner {
+        require(!lpPresent(_newRouter, _tokenA, _tokenB), "Liquidity pool is already being monitored");
+
         Pool memory newPool;
         newPool.routerAddress = _newRouter;
         newPool.router = IUniswapV2Router02(_newRouter);
+        newPool.tokenA = _tokenA;
+        newPool.tokenB = _tokenB;
 
         address _newPair = IUniswapV2Factory(newPool.router.factory()).getPair(address(_tokenA), address(_tokenB));
 
@@ -543,11 +559,13 @@ contract ArbitrageMonitoring is Ownable{
         liquidityPools.push(newPool);
     }
 
-    function removeLiquidityPool(address _oldRouter, address _oldPair) external onlyOwner {
-        require(lpPresent(_oldRouter, _oldPair), "Liquidity pool is not being monitored");
+    function removeLiquidityPool(address _oldRouter, address _oldTokenA, address _oldTokenB) external onlyOwner {
+        require(lpPresent(_oldRouter, _oldTokenA, _oldTokenB), "Liquidity pool is not being monitored");
 
         for (uint i=0; i<liquidityPools.length; i++) {
-            if (liquidityPools[i].routerAddress == _oldRouter && liquidityPools[i].pairAddress == _oldPair) {
+            if (liquidityPools[i].routerAddress == _oldRouter && 
+               ((liquidityPools[i].tokenA == _oldTokenA && liquidityPools[i].tokenB == _oldTokenB) || (liquidityPools[i].tokenA == _oldTokenB && liquidityPools[i].tokenB == _oldTokenA))
+               ) {
                 liquidityPools[i] = liquidityPools[liquidityPools.length -1];
                 liquidityPools.pop();
             }
@@ -568,6 +586,8 @@ contract ArbitrageMonitoring is Ownable{
     function getPriceBOfA(address _tokenA, address _tokenB) public view returns(address[] memory, uint256[] memory){
         uint numberOfRouters = getNumRoutersForPair(_tokenA, _tokenB);
 
+        require(numberOfRouters>0, "Pair not monitored");
+
         address[] memory routersAddress = new address[](numberOfRouters);
         uint256[] memory amountBs = new uint256[](numberOfRouters);
 
@@ -585,7 +605,7 @@ contract ArbitrageMonitoring is Ownable{
                     reserveA = uint(reserve1);
                     reserveB = uint(reserve0);
                 }
-                uint8 decimals = IERC20Metadata(_tokenB).decimals();
+                uint8 decimals = IERC20Metadata(_tokenA).decimals();
                 uint amountB = liquidityPools[i].router.quote(uint(10**decimals), reserveA, reserveB);
 
                 routersAddress[currentRouter] = liquidityPools[i].routerAddress;
@@ -603,7 +623,7 @@ contract ArbitrageMonitoring is Ownable{
                     reserveA = uint(reserve1);
                     reserveB = uint(reserve0);
                 }
-                uint8 decimals = IERC20Metadata(_tokenB).decimals();
+                uint8 decimals = IERC20Metadata(_tokenA).decimals();
                 uint amountB = liquidityPools[i].router.quote(uint(10**decimals), reserveB, reserveA);
 
                 routersAddress[currentRouter] = liquidityPools[i].routerAddress;
@@ -615,6 +635,65 @@ contract ArbitrageMonitoring is Ownable{
         return (routersAddress, amountBs);
     }
 
+    function getPairAddress(address _router, address _tokenA, address _tokenB) public view returns(address) {
+        require(lpPresent(_router, _tokenA, _tokenB), "Liquidity pool is not being monitored");
 
-    
+        for (uint i=0; i<liquidityPools.length; i++) {
+            if (liquidityPools[i].routerAddress == _router && 
+               ((liquidityPools[i].tokenA == _tokenA && liquidityPools[i].tokenB == _tokenB) || (liquidityPools[i].tokenA == _tokenB && liquidityPools[i].tokenB == _tokenA))
+               ) {
+                   return liquidityPools[i].pairAddress;
+            }
+        }
+
+        return address(0);
+    }
+
+    function isArbitrage(address _tokenA, address _tokenB) public view returns(ArbitrageOpportunity memory) {
+        uint numberOfRouters = getNumRoutersForPair(_tokenA, _tokenB);
+        require(numberOfRouters>1, "Pair not monitored from different routers");
+
+        uint256 maxDelta = 0;
+        address router0 = address(0);
+        address router1 = address(0);
+        uint256 priceBofARouter0;
+        uint256 priceBofARouter1;
+
+        ArbitrageOpportunity memory ab;
+        ab.tokenA = _tokenA;
+        ab.tokenB = _tokenB;
+        
+        (address[] memory routers, uint256[] memory prices) = getPriceBOfA(_tokenA, _tokenB);
+        
+        for (uint i=0; i<prices.length; i++){
+            for (uint j=i+1; j<prices.length; j++){
+                if (prices[i] > prices[j]) {
+                    if (prices[i] - prices[j] > maxDelta) {
+                        maxDelta = prices[i] - prices[j];
+                        router0 = routers[i];
+                        router1 = routers[j];
+                        priceBofARouter0 = prices[i];
+                        priceBofARouter1 = prices[j];
+                    }
+                } else {
+                    if (prices[j] - prices[i] > maxDelta) {
+                        maxDelta = prices[j] - prices[i];
+                        router0 = routers[i];
+                        router1 = routers[j];
+                        priceBofARouter0 = prices[i];
+                        priceBofARouter1 = prices[j];
+                    }
+                }
+            }
+        }
+        
+        ab.router0 = router0;
+        ab.router1 = router1;
+        ab.priceBofARouter0 = priceBofARouter0;
+        ab.priceBofARouter1 = priceBofARouter1;
+        ab.delta = maxDelta;
+
+        return ab;
+    }
+
 }
