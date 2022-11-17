@@ -64,4 +64,4 @@ We will continue developing the arbitrage monitoring service as follows:
 # Project contributors
 
 1) Lord Reya (Discord: Lord Reya#4273)
-2) Zorj (Discord: Zorj#2196)
+2) Zorjay (Discord: Zorj#2196)
