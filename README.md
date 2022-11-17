@@ -61,4 +61,7 @@ We will continue developing the arbitrage monitoring service as follows:
 4) We allow for an automated procedure (ideally, another smart contract) to continuously update the list of token pairs and exchange routers to monitor.
 
 
- 
+# Project contributors
+
+1) Lord Reya (Discord: Lord Reya#4273)
+2) Zorj (Discord: Zorj#2196)
