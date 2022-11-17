@@ -25,7 +25,7 @@ The arbitrage_monitoring.sol file contains the current logic behind our monitori
 
 The above points have been developed during the Hackathon and are the subject of this project's submission. 
 
-The smart contract is currently deployed on BSC Testnet at the address 0x6F08927C6ffEc3DCb0DDC3074ac9defe8b267C34.
+The smart contract is currently deployed on BSC Testnet at the address 0x86b8A7445dA9acF40A6D2B244c5b8f1b44F62274.
 
 Because of time constraints related to the Hackathon deadline, we were not able to complete the development of the whole process, which would take the following form:
 
